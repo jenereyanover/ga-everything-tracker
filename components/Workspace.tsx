@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { ClipboardPaste, GanttChartSquare, LogOut, Plus, Search, TableProperties } from "lucide-react";
+import { ClipboardPaste, GanttChartSquare, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, TableProperties } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { subscribeProjects } from "@/lib/db";
 import { usePresence } from "@/lib/presence";
@@ -28,6 +28,20 @@ export default function Workspace() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [importing, setImporting] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("ga-tracker:sidebar-collapsed") === "1");
+    } catch {}
+  }, []);
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem("ga-tracker:sidebar-collapsed", c ? "0" : "1");
+      } catch {}
+      return !c;
+    });
 
   const viewers = usePresence(user);
   useEffect(() => subscribeProjects(setProjects, (e) => setLoadError(e.message)), []);
@@ -68,44 +82,69 @@ export default function Workspace() {
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-ink-200/70 bg-white/70 p-4 backdrop-blur md:flex">
-        <div className="mb-6 flex items-center gap-2.5 px-1">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-blue-500 text-white shadow-md shadow-brand-500/30">
+      <aside className={clsx("hidden shrink-0 flex-col border-r border-ink-200/70 bg-white/70 backdrop-blur transition-[width] duration-200 md:flex", collapsed ? "w-[76px] p-3" : "w-64 p-4")}>
+        <div className={clsx("mb-6 flex items-center", collapsed ? "flex-col gap-3" : "gap-2.5 px-1")}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-blue-500 text-white shadow-md shadow-brand-500/30">
             <GanttChartSquare className="h-5 w-5" />
           </span>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold">GoAbroad</div>
-            <div className="text-xs text-ink-400">Everything Tracker</div>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="text-sm font-semibold">GoAbroad</div>
+              <div className="truncate text-xs text-ink-400">Everything Tracker</div>
+            </div>
+          )}
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expand menu" : "Collapse menu"}
+            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            aria-expanded={!collapsed}
+            className="rounded-lg p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-ink-700"
+          >
+            {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </button>
         </div>
 
         <nav className="space-y-1">
-          <NavBtn active={tab === "tracker"} onClick={() => go("tracker")} icon={<TableProperties className="h-4 w-4" />} label="Tracker" />
-          <NavBtn active={tab === "timeline"} onClick={() => go("timeline")} icon={<GanttChartSquare className="h-4 w-4" />} label="Timeline" />
+          <NavBtn collapsed={collapsed} active={tab === "tracker"} onClick={() => go("tracker")} icon={<TableProperties className="h-4 w-4" />} label="Tracker" />
+          <NavBtn collapsed={collapsed} active={tab === "timeline"} onClick={() => go("timeline")} icon={<GanttChartSquare className="h-4 w-4" />} label="Timeline" />
         </nav>
 
-        <div className="mt-7 px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Sections</div>
-        <div className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-          <SectionBtn active={sectionFilter === "all"} onClick={() => setSectionFilter("all")} label="All projects" count={all.length} />
-          {sections.map((s) => (
-            <SectionBtn key={s} active={sectionFilter === s} onClick={() => setSectionFilter(s)} label={s} count={all.filter((p) => (p.section || "General") === s).length} />
-          ))}
-        </div>
+        {collapsed ? (
+          <div className="flex-1" />
+        ) : (
+          <>
+            <div className="mt-7 px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Sections</div>
+            <div className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+              <SectionBtn active={sectionFilter === "all"} onClick={() => setSectionFilter("all")} label="All projects" count={all.length} />
+              {sections.map((s) => (
+                <SectionBtn key={s} active={sectionFilter === s} onClick={() => setSectionFilter(s)} label={s} count={all.filter((p) => (p.section || "General") === s).length} />
+              ))}
+            </div>
+          </>
+        )}
 
-        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-ink-200/70 bg-white p-3 shadow-card">
-          <Ring value={stats.avg} size={52}>{stats.avg}%</Ring>
-          <div className="text-xs leading-5 text-ink-500">
-            <div className="text-[13px] font-semibold text-ink-900">Overall progress</div>
-            {stats.done} done · {stats.attention} blocked / at risk
+        {collapsed ? (
+          <div className="mt-4 flex justify-center" title={`Overall progress ${stats.avg}% · ${stats.done} done`}>
+            <Ring value={stats.avg} size={46} stroke={5}><span className="text-[11px]">{stats.avg}%</span></Ring>
           </div>
-        </div>
+        ) : (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-ink-200/70 bg-white p-3 shadow-card">
+            <Ring value={stats.avg} size={52}>{stats.avg}%</Ring>
+            <div className="text-xs leading-5 text-ink-500">
+              <div className="text-[13px] font-semibold text-ink-900">Overall progress</div>
+              {stats.done} done · {stats.attention} blocked / at risk
+            </div>
+          </div>
+        )}
 
-        <div className="mt-4 flex items-center gap-2.5 border-t border-ink-200/70 pt-4">
-          <Avatar user={user} size={34} />
-          <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-sm font-medium">{user.name}</div>
-            <div className="truncate text-xs text-ink-400">{user.email}</div>
-          </div>
+        <div className={clsx("mt-4 border-t border-ink-200/70 pt-4", collapsed ? "flex flex-col items-center gap-2" : "flex items-center gap-2.5")}>
+          <span title={collapsed ? `${user.name}\n${user.email}` : undefined}><Avatar user={user} size={34} /></span>
+          {!collapsed && (
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-sm font-medium">{user.name}</div>
+              <div className="truncate text-xs text-ink-400">{user.email}</div>
+            </div>
+          )}
           <button onClick={signOut} title="Sign out" className="rounded-lg p-2 text-ink-400 hover:bg-ink-100 hover:text-ink-700">
             <LogOut className="h-4 w-4" />
           </button>
@@ -169,11 +208,11 @@ export default function Workspace() {
   );
 }
 
-function NavBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function NavBtn({ active, onClick, icon, label, collapsed }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; collapsed?: boolean }) {
   return (
-    <button onClick={onClick} className={clsx("flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition", active ? "bg-brand-50 text-brand-700" : "text-ink-500 hover:bg-ink-100 hover:text-ink-900")}>
+    <button onClick={onClick} title={collapsed ? label : undefined} aria-label={label} className={clsx("flex w-full items-center rounded-lg py-2 text-sm font-medium transition", collapsed ? "justify-center px-0" : "gap-2.5 px-3", active ? "bg-brand-50 text-brand-700" : "text-ink-500 hover:bg-ink-100 hover:text-ink-900")}>
       {icon}
-      {label}
+      {!collapsed && label}
     </button>
   );
 }

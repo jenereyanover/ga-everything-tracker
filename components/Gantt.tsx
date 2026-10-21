@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { addDays, differenceInCalendarDays, endOfMonth, format, getDaysInMonth, isMonday, startOfMonth, startOfToday } from "date-fns";
+import { addDays, addMonths, differenceInCalendarDays, endOfMonth, format, getDaysInMonth, getQuarter, isMonday, startOfMonth, startOfQuarter, startOfToday } from "date-fns";
 import { ChevronDown, Diamond, LocateFixed } from "lucide-react";
 import { AssigneeTags } from "./AssigneePicker";
 import { assigneesOf, fmt, parseDate, sectionColor, statusOf } from "@/lib/dates";
@@ -19,7 +19,7 @@ type Zoom = keyof typeof ZOOMS;
 const LEFT = 288;
 const ROW_H = 46;
 const SECTION_H = 36;
-const HEADER_H = 56;
+const HEADER_H = 84; // quarters + months + day/week ticks
 
 export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpen: (p: Project) => void }) {
   const [zoom, setZoom] = useState<Zoom>("week");
@@ -65,6 +65,23 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
     return out;
   }, [rangeStart, totalDays, px, zoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const quarters = useMemo(() => {
+    const out: { label: string; left: number; w: number; current: boolean; odd: boolean }[] = [];
+    const thisQ = +startOfQuarter(today);
+    let d = startOfQuarter(rangeStart);
+    while (differenceInCalendarDays(d, rangeStart) < totalDays) {
+      const next = addMonths(d, 3);
+      const left = Math.max(0, differenceInCalendarDays(d, rangeStart)) * px;
+      const right = Math.min(totalDays, differenceInCalendarDays(next, rangeStart)) * px;
+      out.push({ label: `Q${getQuarter(d)} ${format(d, "yyyy")}`, left, w: right - left, current: +d === thisQ, odd: getQuarter(d) % 2 === 1 });
+      d = next;
+    }
+    return out;
+  }, [rangeStart, totalDays, px, today]);
+
+  // pixel x of each quarter boundary inside the chart, drawn as stronger gridlines
+  const quarterXs = useMemo(() => quarters.slice(1).map((q) => q.left), [quarters]);
+
   const ticks = useMemo(() => {
     if (zoom === "month") return [] as { d: Date; left: number; w: number; label: string }[];
     const out: { d: Date; left: number; w: number; label: string }[] = [];
@@ -105,17 +122,22 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
           <div className="sticky top-0 z-30 flex bg-white" style={{ height: HEADER_H }}>
             <div className="sticky left-0 z-40 flex shrink-0 items-end border-b border-r border-ink-200/70 bg-ink-50 px-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400" style={{ width: LEFT }}>Project</div>
             <div className="relative border-b border-ink-200/70 bg-ink-50/95" style={{ width }}>
+              {quarters.map((q) => (
+                <div key={q.left} className={clsx("absolute top-0 flex h-7 items-center border-l border-ink-200 px-3 text-[11px] font-bold uppercase tracking-wider", q.current ? "bg-brand-50 text-brand-700" : q.odd ? "bg-ink-100/60 text-ink-500" : "bg-ink-50 text-ink-500")} style={{ left: q.left, width: q.w }}>
+                  <span className="sticky" style={{ left: LEFT + 8 }}>{q.label}{q.current && <span className="ml-2 rounded bg-brand-600 px-1.5 py-px text-[9px] normal-case tracking-normal text-white">Now</span>}</span>
+                </div>
+              ))}
               {months.map((m) => (
-                <div key={m.left} className="absolute top-0 flex h-7 items-center border-l border-ink-200/70 px-3 text-xs font-semibold text-ink-700" style={{ left: m.left, width: m.w }}>
+                <div key={m.left} className="absolute top-7 flex h-7 items-center border-l border-ink-200/70 px-3 text-xs font-semibold text-ink-700" style={{ left: m.left, width: m.w }}>
                   <span className="sticky" style={{ left: LEFT + 8 }}>{m.label}</span>
                 </div>
               ))}
               {ticks.filter((t) => Math.abs(t.left + (zoom === "day" ? px / 2 : 12) - todayX) > 18).map((t) => (
-                <div key={+t.d} className={clsx("absolute top-7 flex h-[27px] items-center justify-center text-[11px]", zoom === "day" && (t.d.getDay() === 0 || t.d.getDay() === 6) ? "text-ink-300" : "text-ink-400")} style={{ left: t.left, width: t.w }}>
+                <div key={+t.d} className={clsx("absolute top-14 flex h-7 items-center justify-center text-[11px]", zoom === "day" && (t.d.getDay() === 0 || t.d.getDay() === 6) ? "text-ink-300" : "text-ink-400")} style={{ left: t.left, width: t.w }}>
                   {zoom === "week" ? <span className="w-full pl-1">{t.label}</span> : t.label}
                 </div>
               ))}
-              <div className="absolute top-[30px] z-10 -translate-x-1/2 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow" style={{ left: todayX }}>Today</div>
+              <div className="absolute top-[58px] z-10 -translate-x-1/2 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow" style={{ left: todayX }}>Today</div>
             </div>
           </div>
 
@@ -131,7 +153,7 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
                     <span className="truncate rounded-md px-2 py-0.5 text-xs font-semibold" style={{ background: c.base, color: c.text }}>{g.name}</span>
                     <span className="ml-auto text-xs text-ink-400">{g.avg}%</span>
                   </button>
-                } width={width} todayX={todayX} gridBg={gridBg} gridOffset={gridOffset} tint>
+                } width={width} todayX={todayX} quarterXs={quarterXs} gridBg={gridBg} gridOffset={gridOffset} tint>
                   {/* section summary bar */}
                   {(() => {
                     const ds = g.items.flatMap((p) => [parseDate(p.start), parseDate(p.due)]).filter(Boolean) as Date[];
@@ -144,7 +166,7 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
 
                 {!isCollapsed &&
                   g.items.map((p) => (
-                    <Row key={p.id} height={ROW_H} width={width} todayX={todayX} gridBg={gridBg} gridOffset={gridOffset}
+                    <Row key={p.id} height={ROW_H} width={width} todayX={todayX} quarterXs={quarterXs} gridBg={gridBg} gridOffset={gridOffset}
                       left={
                         <button onClick={() => onOpen(p)} className="flex w-full items-center gap-2.5 px-4 text-left" title={p.name}>
                           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c.fill }} />
@@ -164,13 +186,14 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
   );
 }
 
-function Row({ height, left, children, width, todayX, gridBg, gridOffset, tint }: {
-  height: number; left: React.ReactNode; children?: React.ReactNode; width: number; todayX: number; gridBg?: string; gridOffset: number; tint?: boolean;
+function Row({ height, left, children, width, todayX, quarterXs, gridBg, gridOffset, tint }: {
+  quarterXs: number[]; height: number; left: React.ReactNode; children?: React.ReactNode; width: number; todayX: number; gridBg?: string; gridOffset: number; tint?: boolean;
 }) {
   return (
     <div className="flex border-b border-ink-100" style={{ height }}>
       <div className={clsx("sticky left-0 z-20 flex shrink-0 items-center border-r border-ink-200/70", tint ? "bg-ink-50" : "bg-white")} style={{ width: LEFT }}>{left}</div>
       <div className={clsx("relative", tint && "bg-ink-50/50")} style={{ width, backgroundImage: gridBg, backgroundPositionX: gridOffset }}>
+        {quarterXs.map((qx) => <div key={qx} className="absolute inset-y-0 w-px bg-ink-300/80" style={{ left: qx }} />)}
         <div className="absolute inset-y-0 z-[1] w-px bg-orange-400/70" style={{ left: todayX }} />
         {children}
       </div>
