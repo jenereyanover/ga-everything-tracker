@@ -4,6 +4,9 @@ export type Status = (typeof STATUSES)[number];
 export const ASSIGNEES = ["TECH", "FRONTEND", "BACKEND", "DESIGN", "SALES", "REVENUE", "DEMAND", "ELSA", "CONTENT", "ACQ & ENABLE", "MANAGERS", "ADMIN"] as const;
 export type Assignee = (typeof ASSIGNEES)[number];
 
+export const PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+
 export type Project = {
   id: string;
   name: string;
@@ -11,6 +14,9 @@ export type Project = {
   status: Status;
   /** one or more teams/owners; empty when unassigned */
   assignees: Assignee[];
+  priority?: Priority;
+  /** shown as a diamond on the timeline instead of a bar */
+  milestone?: boolean;
   /** ids of projects that must finish before this one */
   dependsOn?: string[];
   /** legacy single-value field from before multi-select */

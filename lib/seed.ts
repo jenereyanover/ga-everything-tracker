@@ -38,6 +38,8 @@ export const seedProjects = (): Project[] =>
     due: e === null ? "" : d(e),
     release: r === null ? "" : d(r),
     notes,
+    priority: (["High", "Medium", "Urgent", "Low"] as const)[i % 4],
+    milestone: i === 1 || i === 9,
     dependsOn: DEPS[i] ?? [],
     createdAt: 1_700_000_000_000 + i,
     updatedAt: 1_700_000_000_000 + i,

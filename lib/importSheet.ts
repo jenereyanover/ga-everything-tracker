@@ -1,7 +1,7 @@
 import { format, isValid, parse } from "date-fns";
-import { ASSIGNEES, STATUSES, type Assignee, type Project, type Status } from "./types";
+import { ASSIGNEES, PRIORITIES, STATUSES, type Assignee, type Priority, type Project, type Status } from "./types";
 
-export type ImportRow = Pick<Project, "name" | "section" | "assignees" | "status" | "progress" | "start" | "due" | "release" | "notes"> & { line: number };
+export type ImportRow = Pick<Project, "name" | "section" | "assignees" | "priority" | "status" | "progress" | "start" | "due" | "release" | "notes"> & { line: number };
 export type ParseResult = { rows: ImportRow[]; skipped: number; sectionHeaders: number; usedHeaders: boolean; error?: string };
 
 /** Minimal RFC-4180 style parser; Google Sheets copies as TSV with quoted multi-line cells. */
@@ -34,6 +34,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   section: ["section", "group", "category"],
   name: ["task", "project", "project name", "name", "title"],
   assignee: ["assignee", "owner", "team", "assigned to"],
+  priority: ["priority", "prio"],
   status: ["status", "state"],
   progress: ["progress", "% complete", "percent", "completion", "%"],
   start: ["start", "start date"],
@@ -148,6 +149,7 @@ export function parseSheet(text: string): ParseResult {
       section: get(r, "section") || currentSection || "General",
       progress,
       assignees: normalizeAssignees(get(r, "assignee")),
+      priority: (PRIORITIES.find((x) => x.toLowerCase() === get(r, "priority").toLowerCase()) ?? "Medium") as Priority,
       status,
       start: normalizeDate(get(r, "start")),
       due: normalizeDate(get(r, "due")),

@@ -1,5 +1,5 @@
 import { differenceInCalendarDays, format, isValid, parseISO, startOfToday } from "date-fns";
-import { ASSIGNEES, STATUSES, type Assignee, type Project, type Status } from "./types";
+import { ASSIGNEES, STATUSES, type Assignee, type Priority, type Project, type Status } from "./types";
 
 export const parseDate = (s: string) => {
   if (!s) return null;
@@ -50,4 +50,13 @@ export const sectionColor = (name: string) => {
   let h = 0;
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return SECTION_PALETTE[h % SECTION_PALETTE.length];
+};
+
+export const priorityOf = (p: Project): Priority => p.priority ?? "Medium";
+
+export const PRIORITY_META: Record<Priority, { pill: string; dot: string }> = {
+  Low: { pill: "bg-ink-100 text-ink-500", dot: "bg-ink-300" },
+  Medium: { pill: "bg-blue-50 text-blue-700", dot: "bg-blue-400" },
+  High: { pill: "bg-orange-50 text-orange-700", dot: "bg-orange-500" },
+  Urgent: { pill: "bg-rose-50 text-rose-700", dot: "bg-rose-500" },
 };

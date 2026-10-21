@@ -7,13 +7,13 @@ import { AssigneeChips } from "./AssigneePicker";
 import DependencyPicker from "./DependencyPicker";
 import { dependsOnTransitively, depsOf } from "@/lib/deps";
 import { deleteProject, saveProject } from "@/lib/db";
-import { assigneesOf, fmt, sectionColor, statusOf } from "@/lib/dates";
-import { STATUSES, type Project } from "@/lib/types";
+import { assigneesOf, fmt, priorityOf, sectionColor, statusOf } from "@/lib/dates";
+import { PRIORITIES, STATUSES, type Project } from "@/lib/types";
 
 export type DrawerState = { mode: "create"; section?: string } | { mode: "edit"; project: Project } | null;
 
-type Form = Pick<Project, "name" | "section" | "assignees" | "status" | "progress" | "start" | "due" | "release" | "notes"> & { dependsOn: string[] };
-const empty = (section = ""): Form => ({ name: "", section, assignees: [], dependsOn: [], status: "Not Started", progress: 0, start: "", due: "", release: "", notes: "" });
+type Form = Pick<Project, "name" | "section" | "assignees" | "status" | "priority" | "progress" | "start" | "due" | "release" | "notes"> & { dependsOn: string[]; milestone: boolean };
+const empty = (section = ""): Form => ({ name: "", section, assignees: [], dependsOn: [], milestone: false, priority: "Medium", status: "Not Started", progress: 0, start: "", due: "", release: "", notes: "" });
 
 export default function ProjectDrawer({ state, sections, projects, onClose, onImport }: { state: DrawerState; sections: string[]; projects: Project[]; onClose: () => void; onImport: () => void }) {
   const { user } = useAuth();
@@ -25,7 +25,7 @@ export default function ProjectDrawer({ state, sections, projects, onClose, onIm
   useEffect(() => {
     if (!state) return;
     setError(null);
-    setForm(state.mode === "edit" ? { ...state.project, assignees: assigneesOf(state.project), dependsOn: depsOf(state.project, new Map(projects.map((p) => [p.id, p]))), status: statusOf(state.project) } : empty(state.section));
+    setForm(state.mode === "edit" ? { ...state.project, assignees: assigneesOf(state.project), dependsOn: depsOf(state.project, new Map(projects.map((p) => [p.id, p]))), milestone: !!state.project.milestone, priority: priorityOf(state.project), status: statusOf(state.project) } : empty(state.section));
   }, [state]);
 
   useEffect(() => {
@@ -73,6 +73,8 @@ export default function ProjectDrawer({ state, sections, projects, onClose, onIm
   const depOptions = projects.filter((p) => p.id !== selfId && !(selfId && dependsOnTransitively(p, selfId, byId)));
   const lateDeps = form.start ? form.dependsOn.map((id) => byId.get(id)).filter((d): d is Project => !!d && !!d.due && d.due >= form.start && statusOf(d) !== "Done") : [];
 
+  const blocks = selfId ? projects.filter((p) => depsOf(p, byId).includes(selfId)) : [];
+
   const color = sectionColor(form.section || "General");
 
   return (
@@ -109,11 +111,23 @@ export default function ProjectDrawer({ state, sections, projects, onClose, onIm
                 <AssigneeChips value={form.assignees} onChange={(v) => set("assignees", v)} />
               </Label>
 
-              <Label text="Status">
-                <select className="field" value={form.status} onChange={(e) => set("status", e.target.value as Form["status"])}>
-                  {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </Label>
+              <div className="grid grid-cols-2 gap-4">
+                <Label text="Status">
+                  <select className="field" value={form.status} onChange={(e) => set("status", e.target.value as Form["status"])}>
+                    {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </Label>
+                <Label text="Priority">
+                  <select className="field" value={form.priority} onChange={(e) => set("priority", e.target.value as Form["priority"])}>
+                    {PRIORITIES.map((x) => <option key={x}>{x}</option>)}
+                  </select>
+                </Label>
+              </div>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-ink-200 px-4 py-3">
+                <input type="checkbox" checked={form.milestone} onChange={(e) => set("milestone", e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
+                <span className="text-sm"><span className="font-medium">Milestone</span><span className="block text-xs text-ink-400">Shown as a diamond on the timeline instead of a bar.</span></span>
+              </label>
 
               <Label text={`Progress · ${form.progress}%`}>
                 <div className="flex items-center gap-3">
@@ -132,6 +146,9 @@ export default function ProjectDrawer({ state, sections, projects, onClose, onIm
 
               <Label text="Depends on">
                 <DependencyPicker value={form.dependsOn} onChange={(v) => set("dependsOn", v)} options={depOptions} />
+                {blocks.length > 0 && (
+                  <p className="mt-2 text-xs text-ink-500"><span className="font-medium text-ink-700">Blocks:</span> {blocks.map((b) => b.name).join(", ")}</p>
+                )}
                 {lateDeps.length > 0 && (
                   <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     Starts before {lateDeps.map((d) => `“${d.name}”`).join(", ")} {lateDeps.length === 1 ? "is" : "are"} due to finish.

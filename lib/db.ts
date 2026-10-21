@@ -48,6 +48,8 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
     ...(input.name !== undefined && { name: input.name.trim() }),
     ...(input.section !== undefined && { section: input.section.trim() || "General" }),
     ...(input.assignees !== undefined && { assignees: input.assignees }),
+    ...(input.priority !== undefined && { priority: input.priority }),
+    ...(input.milestone !== undefined && { milestone: input.milestone }),
     ...(input.dependsOn !== undefined && { dependsOn: input.dependsOn }),
     ...(input.status !== undefined && { status: input.status }),
     ...(input.progress !== undefined && { progress: clamp(input.progress) }),
@@ -63,7 +65,7 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
     if (input.id) await updateDoc(doc(firestore, COLLECTION, input.id), patch);
     else
       await addDoc(collection(firestore, COLLECTION), {
-        name: "Untitled project", section: "General", status: "Not Started", assignees: [], dependsOn: [], progress: 0, start: "", due: "", release: "", notes: "",
+        name: "Untitled project", section: "General", status: "Not Started", assignees: [], dependsOn: [], priority: "Medium", milestone: false, progress: 0, start: "", due: "", release: "", notes: "",
         ...patch,
         createdAt: now,
       });
@@ -75,7 +77,7 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
   else
     writeLocal([
       ...list,
-      { id: `local-${now}`, name: "Untitled project", section: "General", status: "Not Started", assignees: [], dependsOn: [], progress: 0, start: "", due: "", release: "", notes: "", ...patch, createdAt: now } as Project,
+      { id: `local-${now}`, name: "Untitled project", section: "General", status: "Not Started", assignees: [], dependsOn: [], priority: "Medium", milestone: false, progress: 0, start: "", due: "", release: "", notes: "", ...patch, createdAt: now } as Project,
     ]);
 }
 
@@ -87,6 +89,8 @@ export async function importProjects(items: Omit<ProjectInput, "id">[], user: Ap
     status: it.status ?? "Not Started",
     assignees: it.assignees ?? [],
     dependsOn: it.dependsOn ?? [],
+    priority: it.priority ?? "Medium",
+    milestone: it.milestone ?? false,
     progress: clamp(it.progress ?? 0),
     start: it.start ?? "",
     due: it.due ?? "",

@@ -2,16 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { ClipboardPaste, GanttChartSquare, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, TableProperties } from "lucide-react";
+import { AlertTriangle, ClipboardPaste, GanttChartSquare, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, TableProperties } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { subscribeProjects } from "@/lib/db";
 import { usePresence } from "@/lib/presence";
 import { assigneesOf, statusOf } from "@/lib/dates";
-import { ASSIGNEES, type Assignee, type Project } from "@/lib/types";
+import { attentionReasons } from "@/lib/insights";
+import { ASSIGNEES, STATUSES, type Assignee, type Project } from "@/lib/types";
 import Avatar from "./Avatar";
 import Viewers from "./Viewers";
 import { Ring } from "./ui";
-import TrackerTable from "./TrackerTable";
+import TrackerPage from "./TrackerPage";
 import Gantt from "./Gantt";
 import ImportModal from "./ImportModal";
 import ProjectDrawer, { type DrawerState } from "./ProjectDrawer";
@@ -26,6 +27,8 @@ export default function Workspace() {
   const [query, setQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [importing, setImporting] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -56,15 +59,18 @@ export default function Workspace() {
 
   const all = projects ?? [];
   const sections = useMemo(() => Array.from(new Set(all.map((p) => p.section || "General"))), [all]);
+  const byId = useMemo(() => new Map(all.map((p) => [p.id, p])), [all]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all.filter(
       (p) =>
         (assigneeFilter === "all" || (assigneeFilter === "none" ? !assigneesOf(p).length : assigneesOf(p).includes(assigneeFilter as Assignee))) &&
         (sectionFilter === "all" || (p.section || "General") === sectionFilter) &&
-        (!q || p.name.toLowerCase().includes(q) || p.notes.toLowerCase().includes(q)),
+        (statusFilter === "all" || statusOf(p) === statusFilter) &&
+        (!q || p.name.toLowerCase().includes(q) || p.notes.toLowerCase().includes(q)) &&
+        (!attentionOnly || attentionReasons(p, byId).length > 0),
     );
-  }, [all, query, sectionFilter, assigneeFilter]);
+  }, [all, byId, query, sectionFilter, assigneeFilter, statusFilter, attentionOnly]);
 
   const stats = useMemo(() => {
     const c = { done: 0, attention: 0 };
@@ -181,6 +187,18 @@ export default function Workspace() {
             {ASSIGNEES.map((a) => <option key={a} value={a}>{a}</option>)}
             <option value="none">Unassigned</option>
           </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="field !w-auto cursor-pointer" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            {STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
+          </select>
+          <button
+            onClick={() => setAttentionOnly((v) => !v)}
+            aria-pressed={attentionOnly}
+            className={clsx("btn border", attentionOnly ? "border-amber-300 bg-amber-50 text-amber-800" : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50")}
+            title="Only show tasks that are overdue, blocked, waiting, clashing or behind"
+          >
+            <AlertTriangle className="h-4 w-4" /> Needs attention
+          </button>
           <button className="btn-ghost" onClick={() => setImporting(true)} title="Paste rows copied from your Google Sheet">
             <ClipboardPaste className="h-4 w-4" /> Import
           </button>
@@ -195,7 +213,7 @@ export default function Workspace() {
           {projects === null ? (
             <div className="p-8 text-sm text-ink-400">Loading…</div>
           ) : tab === "tracker" ? (
-            <TrackerTable projects={visible} all={all} onOpen={(p) => setDrawer({ mode: "edit", project: p })} onAdd={(section) => setDrawer({ mode: "create", section })} />
+            <TrackerPage projects={visible} all={all} assigneeFilter={assigneeFilter} onPickAssignee={setAssigneeFilter} onOpen={(p) => setDrawer({ mode: "edit", project: p })} onAdd={(section) => setDrawer({ mode: "create", section })} />
           ) : (
             <Gantt projects={visible} onOpen={(p) => setDrawer({ mode: "edit", project: p })} />
           )}

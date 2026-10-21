@@ -7,6 +7,7 @@ import { ChevronDown, Diamond, LocateFixed } from "lucide-react";
 import { AssigneeTags } from "./AssigneePicker";
 import { assigneesOf, fmt, parseDate, sectionColor, statusOf } from "@/lib/dates";
 import { depsOf } from "@/lib/deps";
+import { hasClash } from "@/lib/insights";
 import { groupBySection } from "@/lib/group";
 import type { Project } from "@/lib/types";
 
@@ -121,14 +122,14 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
       g.items.forEach((p) => {
         const s = parseDate(p.start);
         const e = parseDate(p.due);
-        const start = s ?? e;
-        const end = e ?? s;
+        const start = p.milestone ? (e ?? s) : (s ?? e);
+        const end = p.milestone ? (e ?? s) : (e ?? s);
         if (start && end) geo.set(p.id, { y: y + ROW_H / 2, x1: x(start), x2: x(end) + px, p });
         y += ROW_H;
       });
     });
     const byId = new Map(projects.map((p) => [p.id, p]));
-    const out: { key: string; d: string; late: boolean }[] = [];
+    const out: { key: string; d: string; kind: "normal" | "cross" | "clash" }[] = [];
     geo.forEach((to, id) => {
       depsOf(to.p, byId).forEach((depId) => {
         const from = geo.get(depId);
@@ -140,7 +141,10 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
           tx >= fx + gap * 2
             ? `M${fx} ${fy} H${fx + gap} V${ty} H${tx - 1}`
             : `M${fx} ${fy} H${fx + gap} V${ty - dir * (ROW_H / 2)} H${tx - gap} V${ty} H${tx - 1}`;
-        out.push({ key: `${depId}->${id}`, d, late: tx < fx });
+        const a = assigneesOf(from.p);
+        const b = assigneesOf(to.p);
+        const cross = a.length > 0 && b.length > 0 && !a.some((n) => b.includes(n)); // hand-off between departments
+        out.push({ key: `${depId}->${id}`, d, kind: hasClash(to.p, from.p) ? "clash" : cross ? "cross" : "normal" });
       });
     });
     return { arrows: out, rowsHeight: y };
@@ -166,6 +170,8 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-6 rounded-full bg-brand-500" /> Progress</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-6 rounded-full bg-brand-100" /> Remaining</span>
           <span className="flex items-center gap-1.5"><svg width="22" height="10" aria-hidden><path d="M1 5 H17" stroke="#8f95b0" strokeWidth="1.5" /><path d="M14 1 L21 5 L14 9z" fill="#8f95b0" /></svg> Dependency</span>
+          <span className="flex items-center gap-1.5"><svg width="22" height="10" aria-hidden><path d="M1 5 H17" stroke="#3b6cf6" strokeWidth="1.5" /><path d="M14 1 L21 5 L14 9z" fill="#3b6cf6" /></svg> Other department</span>
+          <span className="flex items-center gap-1.5"><svg width="22" height="10" aria-hidden><path d="M1 5 H17" stroke="#e5484d" strokeWidth="1.5" strokeDasharray="4 3" /><path d="M14 1 L21 5 L14 9z" fill="#e5484d" /></svg> Date clash</span>
           <span className="flex items-center gap-1.5"><Diamond className="h-3 w-3 fill-emerald-500 text-emerald-500" /> Release</span>
         </div>
       </div>
@@ -238,15 +244,14 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
           {arrows.length > 0 && (
             <svg className="pointer-events-none absolute z-[5]" style={{ left: LEFT, top: HEADER_H, width, height: rowsHeight }} aria-hidden>
               <defs>
-                <marker id="dep-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-                  <path d="M0 0 L8 4 L0 8 z" fill="#8f95b0" />
-                </marker>
-                <marker id="dep-arrow-late" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-                  <path d="M0 0 L8 4 L0 8 z" fill="#e5484d" />
-                </marker>
+                {([["dep-arrow", "#8f95b0"], ["dep-arrow-cross", "#3b6cf6"], ["dep-arrow-clash", "#e5484d"]] as const).map(([id, fill]) => (
+                  <marker key={id} id={id} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                    <path d="M0 0 L8 4 L0 8 z" fill={fill} />
+                  </marker>
+                ))}
               </defs>
               {arrows.map((a) => (
-                <path key={a.key} d={a.d} fill="none" stroke={a.late ? "#e5484d" : "#8f95b0"} strokeWidth={1.5} strokeLinejoin="round" markerEnd={`url(#${a.late ? "dep-arrow-late" : "dep-arrow"})`} />
+                <path key={a.key} d={a.d} fill="none" stroke={a.kind === "clash" ? "#e5484d" : a.kind === "cross" ? "#3b6cf6" : "#8f95b0"} strokeWidth={1.5} strokeLinejoin="round" strokeDasharray={a.kind === "clash" ? "5 4" : undefined} markerEnd={`url(#dep-arrow${a.kind === "normal" ? "" : `-${a.kind}`})`} />
               ))}
             </svg>
           )}
@@ -280,6 +285,18 @@ function Bar({ p, c, x, px, onOpen }: { p: Project; c: { base: string; fill: str
 
   if (!start || !end)
     return r ? <Release x={x(r) + px / 2} date={p.release} /> : <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs italic text-ink-300">No dates yet</span>;
+
+  if (p.milestone) {
+    const at = x(e ?? s!) + px / 2;
+    return (
+      <>
+        <button onClick={() => onOpen(p)} title={`${p.name}\nMilestone · ${fmt(p.due || p.start)}\n${statusOf(p)}`} className="absolute top-1/2 z-[4] -translate-x-1/2 -translate-y-1/2" style={{ left: at }}>
+          <Diamond className={clsx("h-6 w-6 drop-shadow", statusOf(p) === "Done" ? "fill-emerald-500 text-white" : "fill-amber-400 text-white")} strokeWidth={2} />
+        </button>
+        <span className="absolute top-1/2 z-[3] -translate-y-1/2 whitespace-nowrap pl-1 text-[11px] font-semibold text-ink-700" style={{ left: at + 14 }}>{p.name}</span>
+      </>
+    );
+  }
 
   const left = x(start);
   const w = Math.max(px, x(end) - left + px);
