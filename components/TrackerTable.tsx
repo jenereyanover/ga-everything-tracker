@@ -5,12 +5,13 @@ import clsx from "clsx";
 import { ChevronDown, Maximize2, Plus } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { saveProject } from "@/lib/db";
-import { sectionColor, statusOf } from "@/lib/dates";
+import { assigneesOf, isOverdue, sectionColor, STATUS_META, statusOf } from "@/lib/dates";
 import { groupBySection } from "@/lib/group";
-import type { Project, ProjectInput } from "@/lib/types";
-import { ProgressBar, StatusPill } from "./ui";
+import { STATUSES, type Project, type ProjectInput, type Status } from "@/lib/types";
+import { ProgressBar } from "./ui";
+import { AssigneeCell } from "./AssigneePicker";
 
-const COLS = "grid-cols-[minmax(280px,2.2fr)_120px_150px_136px_136px_136px_minmax(220px,1.6fr)_44px]";
+const COLS = "grid-cols-[minmax(280px,2.2fr)_150px_120px_150px_136px_136px_136px_minmax(220px,1.6fr)_44px]";
 
 export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Project[]; onOpen: (p: Project) => void; onAdd: (section: string) => void }) {
   const { user } = useAuth();
@@ -31,9 +32,9 @@ export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Pr
 
   return (
     <div className="h-full overflow-auto px-5 pb-10 pt-5 md:px-8">
-      <div className="min-w-[1130px] overflow-hidden rounded-2xl border border-ink-200/70 bg-white shadow-card">
+      <div className="min-w-[1260px] overflow-hidden rounded-2xl border border-ink-200/70 bg-white shadow-card">
         <div className={clsx("sticky top-0 z-10 grid items-center border-b border-ink-200/70 bg-ink-50/95 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400 backdrop-blur", COLS)}>
-          <div className="pl-2">Project</div><div>Status</div><div>Progress</div><div>Start</div><div>Due</div><div>Released</div><div>Notes</div><div />
+          <div className="pl-2">Project</div><div>Assignee</div><div>Status</div><div>Progress</div><div>Start</div><div>Due</div><div>Released</div><div>Notes</div><div />
         </div>
 
         {groups.map((g) => {
@@ -67,14 +68,17 @@ export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Pr
 }
 
 function Row({ p, color, update, onOpen }: { p: Project; color: string; update: (id: string, patch: ProjectInput) => void; onOpen: (p: Project) => void }) {
-  const overdue = statusOf(p) === "overdue";
+  const overdue = isOverdue(p);
   return (
     <div className={clsx("group grid items-center border-b border-ink-100 px-3 py-1 last:border-0 hover:bg-brand-50/30", COLS)}>
       <div className="flex items-center gap-1 pr-2">
         <span className="mr-1 h-6 w-1 shrink-0 rounded-full" style={{ background: color }} />
         <TextCell value={p.name} onCommit={(v) => v.trim() && update(p.id, { name: v })} className="font-medium" placeholder="Project name" />
       </div>
-      <div><StatusPill status={statusOf(p)} /></div>
+      <div className="pr-2">
+        <AssigneeCell value={assigneesOf(p)} onChange={(v) => update(p.id, { assignees: v })} />
+      </div>
+      <div className="pr-2"><StatusSelect value={statusOf(p)} onChange={(v) => update(p.id, { status: v })} /></div>
       <div className="flex items-center gap-2 pr-3">
         <ProgressBar value={p.progress} color={color} className="flex-1" />
         <NumCell value={p.progress} onCommit={(v) => update(p.id, { progress: v })} />
@@ -149,5 +153,21 @@ function DateCell({ value, onCommit, danger }: { value: string; onCommit: (v: st
         onChange={(e) => e.target.value !== value && onCommit(e.target.value)}
       />
     </div>
+  );
+}
+
+function StatusSelect({ value, onChange }: { value: Status; onChange: (v: Status) => void }) {
+  const m = STATUS_META[value];
+  return (
+    <label className={clsx("relative inline-flex items-center rounded-full text-xs font-medium", m.pill)}>
+      <span className={clsx("pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full", m.dot)} />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as Status)}
+        className="cursor-pointer appearance-none rounded-full bg-transparent py-0.5 pl-6 pr-3 text-xs font-medium outline-none focus:ring-2 focus:ring-brand-200"
+      >
+        {STATUSES.map((s) => <option key={s} value={s} className="text-ink-900">{s}</option>)}
+      </select>
+    </label>
   );
 }

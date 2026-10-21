@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
 import { firestore, isFirebaseConfigured } from "./firebase";
 import { seedProjects } from "./seed";
 import type { AppUser, Project, ProjectInput } from "./types";
@@ -47,6 +47,8 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
   const patch = {
     ...(input.name !== undefined && { name: input.name.trim() }),
     ...(input.section !== undefined && { section: input.section.trim() || "General" }),
+    ...(input.assignees !== undefined && { assignees: input.assignees }),
+    ...(input.status !== undefined && { status: input.status }),
     ...(input.progress !== undefined && { progress: clamp(input.progress) }),
     ...(input.start !== undefined && { start: input.start }),
     ...(input.due !== undefined && { due: input.due }),
@@ -60,7 +62,7 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
     if (input.id) await updateDoc(doc(firestore, COLLECTION, input.id), patch);
     else
       await addDoc(collection(firestore, COLLECTION), {
-        name: "Untitled project", section: "General", progress: 0, start: "", due: "", release: "", notes: "",
+        name: "Untitled project", section: "General", status: "Not Started", assignees: [], progress: 0, start: "", due: "", release: "", notes: "",
         ...patch,
         createdAt: now,
       });
@@ -72,8 +74,36 @@ export async function saveProject(input: ProjectInput, user: AppUser): Promise<v
   else
     writeLocal([
       ...list,
-      { id: `local-${now}`, name: "Untitled project", section: "General", progress: 0, start: "", due: "", release: "", notes: "", ...patch, createdAt: now } as Project,
+      { id: `local-${now}`, name: "Untitled project", section: "General", status: "Not Started", assignees: [], progress: 0, start: "", due: "", release: "", notes: "", ...patch, createdAt: now } as Project,
     ]);
+}
+
+export async function importProjects(items: Omit<ProjectInput, "id">[], user: AppUser): Promise<void> {
+  const now = Date.now();
+  const full = items.map((it, i) => ({
+    name: (it.name ?? "").trim() || "Untitled project",
+    section: (it.section ?? "").trim() || "General",
+    status: it.status ?? "Not Started",
+    assignees: it.assignees ?? [],
+    progress: clamp(it.progress ?? 0),
+    start: it.start ?? "",
+    due: it.due ?? "",
+    release: it.release ?? "",
+    notes: it.notes ?? "",
+    createdAt: now + i, // keeps the sheet's row order
+    updatedAt: now,
+    updatedBy: user.name,
+  }));
+
+  if (isFirebaseConfigured && firestore) {
+    for (let i = 0; i < full.length; i += 400) {
+      const batch = writeBatch(firestore);
+      full.slice(i, i + 400).forEach((p) => batch.set(doc(collection(firestore!, COLLECTION)), p));
+      await batch.commit();
+    }
+    return;
+  }
+  writeLocal([...readLocal(), ...full.map((p, i) => ({ id: `local-${now}-${i}`, ...p }) as Project)]);
 }
 
 export async function deleteProject(id: string): Promise<void> {

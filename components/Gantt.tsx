@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { addDays, differenceInCalendarDays, endOfMonth, format, getDaysInMonth, isMonday, startOfMonth, startOfToday } from "date-fns";
 import { ChevronDown, Diamond, LocateFixed } from "lucide-react";
-import { fmt, parseDate, sectionColor, STATUS_META, statusOf } from "@/lib/dates";
+import { AssigneeTags } from "./AssigneePicker";
+import { assigneesOf, fmt, parseDate, sectionColor, statusOf } from "@/lib/dates";
 import { groupBySection } from "@/lib/group";
 import type { Project } from "@/lib/types";
 
@@ -148,6 +149,7 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
                         <button onClick={() => onOpen(p)} className="flex w-full items-center gap-2.5 px-4 text-left" title={p.name}>
                           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c.fill }} />
                           <span className="truncate text-[13px] font-medium text-ink-900">{p.name}</span>
+                          <span className="ml-auto"><AssigneeTags value={assigneesOf(p)} /></span>
                         </button>
                       }>
                       <Bar p={p} c={c} x={x} px={px} onOpen={onOpen} />
@@ -198,7 +200,7 @@ function Bar({ p, c, x, px, onOpen }: { p: Project; c: { base: string; fill: str
 
       <button
         onClick={() => onOpen(p)}
-        title={`${p.name}\n${fmt(p.start) || "?"} → ${fmt(p.due) || "?"}${p.release ? `\nRelease ${fmt(p.release)}` : ""}\n${p.progress}% · ${STATUS_META[status].label}`}
+        title={`${p.name}${assigneesOf(p).length ? ` (${assigneesOf(p).join(", ")})` : ""}\n${fmt(p.start) || "?"} → ${fmt(p.due) || "?"}${p.release ? `\nRelease ${fmt(p.release)}` : ""}\n${p.progress}% · ${status}`}
         className="group/bar absolute top-1/2 z-[3] h-7 -translate-y-1/2 overflow-hidden rounded-full text-left shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-2"
         style={{ left, width: w, background: c.base, ["--tw-ring-color" as string]: c.fill }}
       >

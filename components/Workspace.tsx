@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { GanttChartSquare, ListChecks, LogOut, Plus, Search, TableProperties } from "lucide-react";
+import { ClipboardPaste, GanttChartSquare, LogOut, Plus, Search, TableProperties } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { subscribeProjects } from "@/lib/db";
-import { statusOf } from "@/lib/dates";
-import type { Project } from "@/lib/types";
+import { usePresence } from "@/lib/presence";
+import { assigneesOf, statusOf } from "@/lib/dates";
+import { ASSIGNEES, type Assignee, type Project } from "@/lib/types";
 import Avatar from "./Avatar";
+import Viewers from "./Viewers";
 import { Ring } from "./ui";
 import TrackerTable from "./TrackerTable";
 import Gantt from "./Gantt";
+import ImportModal from "./ImportModal";
 import ProjectDrawer, { type DrawerState } from "./ProjectDrawer";
 
 type Tab = "tracker" | "timeline";
@@ -22,8 +25,11 @@ export default function Workspace() {
   const [tab, setTab] = useState<Tab>("tracker");
   const [query, setQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [drawer, setDrawer] = useState<DrawerState>(null);
+  const [importing, setImporting] = useState(false);
 
+  const viewers = usePresence(user);
   useEffect(() => subscribeProjects(setProjects, (e) => setLoadError(e.message)), []);
   useEffect(() => {
     const h = window.location.hash.replace("#", "");
@@ -40,14 +46,19 @@ export default function Workspace() {
     const q = query.trim().toLowerCase();
     return all.filter(
       (p) =>
+        (assigneeFilter === "all" || (assigneeFilter === "none" ? !assigneesOf(p).length : assigneesOf(p).includes(assigneeFilter as Assignee))) &&
         (sectionFilter === "all" || (p.section || "General") === sectionFilter) &&
         (!q || p.name.toLowerCase().includes(q) || p.notes.toLowerCase().includes(q)),
     );
-  }, [all, query, sectionFilter]);
+  }, [all, query, sectionFilter, assigneeFilter]);
 
   const stats = useMemo(() => {
-    const c = { active: 0, done: 0, overdue: 0, planned: 0 };
-    all.forEach((p) => c[statusOf(p)]++);
+    const c = { done: 0, attention: 0 };
+    all.forEach((p) => {
+      const s = statusOf(p);
+      if (s === "Done") c.done++;
+      if (s === "Blocked" || s === "At Risk") c.attention++;
+    });
     const avg = all.length ? Math.round(all.reduce((s, p) => s + p.progress, 0) / all.length) : 0;
     return { ...c, avg };
   }, [all]);
@@ -85,7 +96,7 @@ export default function Workspace() {
           <Ring value={stats.avg} size={52}>{stats.avg}%</Ring>
           <div className="text-xs leading-5 text-ink-500">
             <div className="text-[13px] font-semibold text-ink-900">Overall progress</div>
-            {stats.done} done · {stats.overdue} overdue
+            {stats.done} done · {stats.attention} blocked / at risk
           </div>
         </div>
 
@@ -113,6 +124,8 @@ export default function Workspace() {
             </p>
           </div>
 
+          <Viewers viewers={viewers} meUid={user?.uid ?? ""} />
+
           {/* mobile tab switch */}
           <div className="flex rounded-lg bg-ink-100 p-0.5 md:hidden">
             {(["tracker", "timeline"] as Tab[]).map((t) => (
@@ -124,6 +137,14 @@ export default function Workspace() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects…" className="field !w-56 !pl-9" />
           </div>
+          <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="field !w-auto cursor-pointer" aria-label="Filter by assignee">
+            <option value="all">All assignees</option>
+            {ASSIGNEES.map((a) => <option key={a} value={a}>{a}</option>)}
+            <option value="none">Unassigned</option>
+          </select>
+          <button className="btn-ghost" onClick={() => setImporting(true)} title="Paste rows copied from your Google Sheet">
+            <ClipboardPaste className="h-4 w-4" /> Import
+          </button>
           <button className="btn-primary" onClick={() => setDrawer({ mode: "create", section: sectionFilter === "all" ? undefined : sectionFilter })}>
             <Plus className="h-4 w-4" /> New project
           </button>
@@ -142,7 +163,8 @@ export default function Workspace() {
         </div>
       </main>
 
-      <ProjectDrawer state={drawer} sections={sections} onClose={() => setDrawer(null)} />
+      <ImportModal open={importing} existing={all} onClose={() => setImporting(false)} />
+      <ProjectDrawer state={drawer} sections={sections} onClose={() => setDrawer(null)} onImport={() => { setDrawer(null); setImporting(true); }} />
     </div>
   );
 }

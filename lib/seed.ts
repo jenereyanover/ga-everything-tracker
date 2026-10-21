@@ -1,5 +1,5 @@
 import { addDays, format, startOfToday } from "date-fns";
-import type { Project } from "./types";
+import type { Assignee, Project } from "./types";
 
 const d = (n: number) => format(addDays(startOfToday(), n), "yyyy-MM-dd");
 
@@ -21,12 +21,16 @@ const rows: Row[] = [
   ["Frontend Improvements", "Outline content for editorial guidelines page", 0, 20, 70, null, ""],
 ];
 
+const ASSIGN: Assignee[] = ["FRONTEND", "BACKEND", "DEMAND", "TECH", "DESIGN", "CONTENT", "ELSA", "SALES", "REVENUE"];
+
 export const seedProjects = (): Project[] =>
   rows.map(([section, name, progress, s, e, r, notes], i) => ({
     id: `seed-${i}`,
     section,
+    assignees: i % 4 === 0 ? [ASSIGN[i % ASSIGN.length], "TECH"] : [ASSIGN[i % ASSIGN.length]],
     name,
     progress,
+    status: progress >= 100 ? "Done" : progress === 0 ? "Not Started" : /STOPPED/.test(notes) ? "Blocked" : e !== null && e < 0 ? "At Risk" : "Started",
     start: s === null ? "" : d(s),
     due: e === null ? "" : d(e),
     release: r === null ? "" : d(r),

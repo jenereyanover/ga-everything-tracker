@@ -1,5 +1,5 @@
 import { differenceInCalendarDays, format, isValid, parseISO, startOfToday } from "date-fns";
-import type { Project } from "./types";
+import { ASSIGNEES, STATUSES, type Assignee, type Project, type Status } from "./types";
 
 export const parseDate = (s: string) => {
   if (!s) return null;
@@ -12,23 +12,25 @@ export const fmt = (s: string, pattern = "MMM d, yyyy") => {
   return d ? format(d, pattern) : "";
 };
 
-export type Status = "planned" | "active" | "done" | "overdue";
+/** Assignees, including projects saved with the older single `assignee` field. */
+export const assigneesOf = (p: Project): Assignee[] =>
+  Array.isArray(p.assignees) ? p.assignees : p.assignee && (ASSIGNEES as readonly string[]).includes(p.assignee) ? [p.assignee as Assignee] : [];
 
-export const statusOf = (p: Project): Status => {
-  if (p.progress >= 100) return "done";
+/** Stored status; projects saved before the field existed fall back to a guess from progress. */
+export const statusOf = (p: Project): Status =>
+  p.status && STATUSES.includes(p.status) ? p.status : p.progress >= 100 ? "Done" : p.progress > 0 ? "Started" : "Not Started";
+
+export const isOverdue = (p: Project) => {
   const due = parseDate(p.due);
-  const start = parseDate(p.start);
-  const today = startOfToday();
-  if (due && differenceInCalendarDays(due, today) < 0) return "overdue";
-  if (p.progress <= 0 && start && differenceInCalendarDays(start, today) > 0) return "planned";
-  return "active";
+  return statusOf(p) !== "Done" && !!due && differenceInCalendarDays(due, startOfToday()) < 0;
 };
 
-export const STATUS_META: Record<Status, { label: string; dot: string; pill: string }> = {
-  planned: { label: "Planned", dot: "bg-ink-300", pill: "bg-ink-100 text-ink-500" },
-  active: { label: "In progress", dot: "bg-blue-500", pill: "bg-blue-50 text-blue-700" },
-  done: { label: "Done", dot: "bg-emerald-500", pill: "bg-emerald-50 text-emerald-700" },
-  overdue: { label: "Overdue", dot: "bg-rose-500", pill: "bg-rose-50 text-rose-700" },
+export const STATUS_META: Record<Status, { dot: string; pill: string }> = {
+  "Not Started": { dot: "bg-ink-300", pill: "bg-ink-100 text-ink-500" },
+  Started: { dot: "bg-blue-500", pill: "bg-blue-50 text-blue-700" },
+  Blocked: { dot: "bg-rose-500", pill: "bg-rose-50 text-rose-700" },
+  "At Risk": { dot: "bg-amber-500", pill: "bg-amber-50 text-amber-700" },
+  Done: { dot: "bg-emerald-500", pill: "bg-emerald-50 text-emerald-700" },
 };
 
 export const SECTION_PALETTE = [

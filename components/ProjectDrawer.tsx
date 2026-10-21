@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Trash2, X } from "lucide-react";
+import { ClipboardPaste, Loader2, Trash2, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { AssigneeChips } from "./AssigneePicker";
 import { deleteProject, saveProject } from "@/lib/db";
-import { fmt, sectionColor } from "@/lib/dates";
-import type { Project } from "@/lib/types";
+import { assigneesOf, fmt, sectionColor, statusOf } from "@/lib/dates";
+import { STATUSES, type Project } from "@/lib/types";
 
 export type DrawerState = { mode: "create"; section?: string } | { mode: "edit"; project: Project } | null;
 
-type Form = Pick<Project, "name" | "section" | "progress" | "start" | "due" | "release" | "notes">;
-const empty = (section = ""): Form => ({ name: "", section, progress: 0, start: "", due: "", release: "", notes: "" });
+type Form = Pick<Project, "name" | "section" | "assignees" | "status" | "progress" | "start" | "due" | "release" | "notes">;
+const empty = (section = ""): Form => ({ name: "", section, assignees: [], status: "Not Started", progress: 0, start: "", due: "", release: "", notes: "" });
 
-export default function ProjectDrawer({ state, sections, onClose }: { state: DrawerState; sections: string[]; onClose: () => void }) {
+export default function ProjectDrawer({ state, sections, onClose, onImport }: { state: DrawerState; sections: string[]; onClose: () => void; onImport: () => void }) {
   const { user } = useAuth();
   const [form, setForm] = useState<Form>(empty());
   const [busy, setBusy] = useState(false);
@@ -22,7 +23,7 @@ export default function ProjectDrawer({ state, sections, onClose }: { state: Dra
   useEffect(() => {
     if (!state) return;
     setError(null);
-    setForm(state.mode === "edit" ? { ...state.project } : empty(state.section));
+    setForm(state.mode === "edit" ? { ...state.project, assignees: assigneesOf(state.project), status: statusOf(state.project) } : empty(state.section));
   }, [state]);
 
   useEffect(() => {
@@ -81,6 +82,12 @@ export default function ProjectDrawer({ state, sections, onClose }: { state: Dra
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              {state?.mode === "create" && (
+                <button type="button" onClick={onImport} className="flex w-full items-center gap-3 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 px-4 py-3 text-left text-sm transition hover:bg-brand-50">
+                  <ClipboardPaste className="h-5 w-5 shrink-0 text-brand-600" />
+                  <span><b className="font-medium text-brand-700">Paste from your sheet</b><span className="block text-xs text-ink-500">Import many projects at once from Google Sheets or CSV.</span></span>
+                </button>
+              )}
               <Label text="Project name">
                 <input autoFocus className="field" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. New program listing design" />
               </Label>
@@ -88,6 +95,16 @@ export default function ProjectDrawer({ state, sections, onClose }: { state: Dra
               <Label text="Section">
                 <input className="field" list="sections" value={form.section} onChange={(e) => set("section", e.target.value)} placeholder="e.g. Content Production" />
                 <datalist id="sections">{sections.map((s) => <option key={s} value={s} />)}</datalist>
+              </Label>
+
+              <Label text="Assignees">
+                <AssigneeChips value={form.assignees} onChange={(v) => set("assignees", v)} />
+              </Label>
+
+              <Label text="Status">
+                <select className="field" value={form.status} onChange={(e) => set("status", e.target.value as Form["status"])}>
+                  {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                </select>
               </Label>
 
               <Label text={`Progress · ${form.progress}%`}>
