@@ -195,7 +195,7 @@ export default function Workspace() {
           {projects === null ? (
             <div className="p-8 text-sm text-ink-400">Loading…</div>
           ) : tab === "tracker" ? (
-            <TrackerTable projects={visible} onOpen={(p) => setDrawer({ mode: "edit", project: p })} onAdd={(section) => setDrawer({ mode: "create", section })} />
+            <TrackerTable projects={visible} all={all} onOpen={(p) => setDrawer({ mode: "edit", project: p })} onAdd={(section) => setDrawer({ mode: "create", section })} />
           ) : (
             <Gantt projects={visible} onOpen={(p) => setDrawer({ mode: "edit", project: p })} />
           )}
@@ -203,7 +203,7 @@ export default function Workspace() {
       </main>
 
       <ImportModal open={importing} existing={all} onClose={() => setImporting(false)} />
-      <ProjectDrawer state={drawer} sections={sections} onClose={() => setDrawer(null)} onImport={() => { setDrawer(null); setImporting(true); }} />
+      <ProjectDrawer state={drawer} sections={sections} projects={all} onClose={() => setDrawer(null)} onImport={() => { setDrawer(null); setImporting(true); }} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { addDays, addMonths, differenceInCalendarDays, endOfMonth, format, getDa
 import { ChevronDown, Diamond, LocateFixed } from "lucide-react";
 import { AssigneeTags } from "./AssigneePicker";
 import { assigneesOf, fmt, parseDate, sectionColor, statusOf } from "@/lib/dates";
+import { depsOf } from "@/lib/deps";
 import { groupBySection } from "@/lib/group";
 import type { Project } from "@/lib/types";
 
@@ -30,15 +31,31 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
 
   const groups = useMemo(() => groupBySection(projects), [projects]);
 
-  const { rangeStart, totalDays } = useMemo(() => {
+  const { rangeStart, baseDays } = useMemo(() => {
     const dates = [today];
     projects.forEach((p) => [p.start, p.due, p.release].forEach((s) => { const d = parseDate(s); if (d) dates.push(d); }));
     const min = dates.reduce((a, b) => (a < b ? a : b));
     const max = dates.reduce((a, b) => (a > b ? a : b));
     const rs = startOfMonth(addDays(min, -10));
     const re = endOfMonth(addDays(max, 21));
-    return { rangeStart: rs, totalDays: differenceInCalendarDays(re, rs) + 1 };
+    return { rangeStart: rs, baseDays: differenceInCalendarDays(re, rs) + 1 };
   }, [projects, today]);
+
+  // keep the calendar at least as wide as the visible area so it never ends in blank space
+  const [viewW, setViewW] = useState(1400);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewW(el.clientWidth));
+    ro.observe(el);
+    setViewW(el.clientWidth);
+    return () => ro.disconnect();
+  }, [groups.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  // end on a month boundary so the last month/quarter is never a sliver
+  const totalDays = useMemo(() => {
+    const need = Math.max(baseDays, Math.ceil((viewW - LEFT) / px) + 7);
+    return differenceInCalendarDays(endOfMonth(addDays(rangeStart, need - 1)), rangeStart) + 1;
+  }, [baseDays, viewW, px, rangeStart]);
 
   const x = (d: Date) => differenceInCalendarDays(d, rangeStart) * px;
   const width = totalDays * px;
@@ -58,8 +75,9 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
     const out: { label: string; w: number; left: number }[] = [];
     let d = rangeStart;
     while (differenceInCalendarDays(d, rangeStart) < totalDays) {
-      const w = getDaysInMonth(d) * px;
-      out.push({ label: format(d, zoom === "month" ? "MMM yy" : "MMMM yyyy"), w, left: x(d) });
+      const left = x(d);
+      const w = Math.min(getDaysInMonth(d) * px, totalDays * px - left);
+      out.push({ label: format(d, zoom === "month" ? "MMM yy" : "MMMM yyyy"), w, left });
       d = addDays(endOfMonth(d), 1);
     }
     return out;
@@ -93,6 +111,41 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
     return out;
   }, [zoom, totalDays, rangeStart, px]);
 
+  // Bar geometry per visible project, used to draw dependency arrows.
+  const { arrows, rowsHeight } = useMemo(() => {
+    const geo = new Map<string, { y: number; x1: number; x2: number; p: Project }>();
+    let y = 0;
+    groups.forEach((g) => {
+      y += SECTION_H;
+      if (collapsed[g.name]) return;
+      g.items.forEach((p) => {
+        const s = parseDate(p.start);
+        const e = parseDate(p.due);
+        const start = s ?? e;
+        const end = e ?? s;
+        if (start && end) geo.set(p.id, { y: y + ROW_H / 2, x1: x(start), x2: x(end) + px, p });
+        y += ROW_H;
+      });
+    });
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    const out: { key: string; d: string; late: boolean }[] = [];
+    geo.forEach((to, id) => {
+      depsOf(to.p, byId).forEach((depId) => {
+        const from = geo.get(depId);
+        if (!from) return;
+        const fx = from.x2, fy = from.y, tx = to.x1, ty = to.y;
+        const dir = ty >= fy ? 1 : -1;
+        const gap = 12;
+        const d =
+          tx >= fx + gap * 2
+            ? `M${fx} ${fy} H${fx + gap} V${ty} H${tx - 1}`
+            : `M${fx} ${fy} H${fx + gap} V${ty - dir * (ROW_H / 2)} H${tx - gap} V${ty} H${tx - 1}`;
+        out.push({ key: `${depId}->${id}`, d, late: tx < fx });
+      });
+    });
+    return { arrows: out, rowsHeight: y };
+  }, [groups, collapsed, projects, x, px]);
+
   const gridBg = zoom === "month" ? undefined : `repeating-linear-gradient(to right, #eef0f6 0, #eef0f6 1px, transparent 1px, transparent ${zoom === "day" ? px : px * 7}px)`;
   const gridOffset = zoom === "week" ? ((8 - rangeStart.getDay()) % 7) * px : 0; // align weekly lines to Mondays
 
@@ -112,23 +165,24 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
         <div className="ml-auto flex items-center gap-4 text-xs text-ink-500">
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-6 rounded-full bg-brand-500" /> Progress</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-6 rounded-full bg-brand-100" /> Remaining</span>
+          <span className="flex items-center gap-1.5"><svg width="22" height="10" aria-hidden><path d="M1 5 H17" stroke="#8f95b0" strokeWidth="1.5" /><path d="M14 1 L21 5 L14 9z" fill="#8f95b0" /></svg> Dependency</span>
           <span className="flex items-center gap-1.5"><Diamond className="h-3 w-3 fill-emerald-500 text-emerald-500" /> Release</span>
         </div>
       </div>
 
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-ink-200/70 bg-white shadow-card">
-        <div style={{ width: LEFT + width, minHeight: "100%" }}>
+        <div className="relative" style={{ width: LEFT + width, minHeight: "100%" }}>
           {/* header */}
           <div className="sticky top-0 z-30 flex bg-white" style={{ height: HEADER_H }}>
             <div className="sticky left-0 z-40 flex shrink-0 items-end border-b border-r border-ink-200/70 bg-ink-50 px-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400" style={{ width: LEFT }}>Project</div>
             <div className="relative border-b border-ink-200/70 bg-ink-50/95" style={{ width }}>
               {quarters.map((q) => (
-                <div key={q.left} className={clsx("absolute top-0 flex h-7 items-center border-l border-ink-200 px-3 text-[11px] font-bold uppercase tracking-wider", q.current ? "bg-brand-50 text-brand-700" : q.odd ? "bg-ink-100/60 text-ink-500" : "bg-ink-50 text-ink-500")} style={{ left: q.left, width: q.w }}>
+                <div key={q.left} className={clsx("absolute top-0 flex h-7 items-center overflow-clip whitespace-nowrap border-l border-ink-200 px-3 text-[11px] font-bold uppercase tracking-wider", q.current ? "bg-brand-50 text-brand-700" : q.odd ? "bg-ink-100/60 text-ink-500" : "bg-ink-50 text-ink-500")} style={{ left: q.left, width: q.w }}>
                   <span className="sticky" style={{ left: LEFT + 8 }}>{q.label}{q.current && <span className="ml-2 rounded bg-brand-600 px-1.5 py-px text-[9px] normal-case tracking-normal text-white">Now</span>}</span>
                 </div>
               ))}
               {months.map((m) => (
-                <div key={m.left} className="absolute top-7 flex h-7 items-center border-l border-ink-200/70 px-3 text-xs font-semibold text-ink-700" style={{ left: m.left, width: m.w }}>
+                <div key={m.left} className="absolute top-7 flex h-7 items-center overflow-clip whitespace-nowrap border-l border-ink-200/70 px-3 text-xs font-semibold text-ink-700" style={{ left: m.left, width: m.w }}>
                   <span className="sticky" style={{ left: LEFT + 8 }}>{m.label}</span>
                 </div>
               ))}
@@ -180,6 +234,22 @@ export default function Gantt({ projects, onOpen }: { projects: Project[]; onOpe
               </div>
             );
           })}
+
+          {arrows.length > 0 && (
+            <svg className="pointer-events-none absolute z-[5]" style={{ left: LEFT, top: HEADER_H, width, height: rowsHeight }} aria-hidden>
+              <defs>
+                <marker id="dep-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 z" fill="#8f95b0" />
+                </marker>
+                <marker id="dep-arrow-late" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 z" fill="#e5484d" />
+                </marker>
+              </defs>
+              {arrows.map((a) => (
+                <path key={a.key} d={a.d} fill="none" stroke={a.late ? "#e5484d" : "#8f95b0"} strokeWidth={1.5} strokeLinejoin="round" markerEnd={`url(#${a.late ? "dep-arrow-late" : "dep-arrow"})`} />
+              ))}
+            </svg>
+          )}
         </div>
       </div>
     </div>

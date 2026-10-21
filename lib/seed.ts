@@ -23,6 +23,9 @@ const rows: Row[] = [
 
 const ASSIGN: Assignee[] = ["FRONTEND", "BACKEND", "DEMAND", "TECH", "DESIGN", "CONTENT", "ELSA", "SALES", "REVENUE"];
 
+// index → indexes it depends on (demo data)
+const DEPS: Record<number, string[]> = { 4: ["seed-3"], 10: ["seed-9"], 7: ["seed-6"], 2: ["seed-1"] };
+
 export const seedProjects = (): Project[] =>
   rows.map(([section, name, progress, s, e, r, notes], i) => ({
     id: `seed-${i}`,
@@ -35,6 +38,7 @@ export const seedProjects = (): Project[] =>
     due: e === null ? "" : d(e),
     release: r === null ? "" : d(r),
     notes,
+    dependsOn: DEPS[i] ?? [],
     createdAt: 1_700_000_000_000 + i,
     updatedAt: 1_700_000_000_000 + i,
     updatedBy: "Demo data",

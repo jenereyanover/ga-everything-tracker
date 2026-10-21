@@ -13,8 +13,11 @@ export const fmt = (s: string, pattern = "MMM d, yyyy") => {
 };
 
 /** Assignees, including projects saved with the older single `assignee` field. */
-export const assigneesOf = (p: Project): Assignee[] =>
-  Array.isArray(p.assignees) ? p.assignees : p.assignee && (ASSIGNEES as readonly string[]).includes(p.assignee) ? [p.assignee as Assignee] : [];
+export const assigneesOf = (p: Project): Assignee[] => {
+  const known = (v: string): v is Assignee => (ASSIGNEES as readonly string[]).includes(v);
+  const raw = Array.isArray(p.assignees) ? p.assignees : p.assignee ? [p.assignee] : [];
+  return raw.filter(known); // names no longer in the list (e.g. individual people) are ignored
+};
 
 /** Stored status; projects saved before the field existed fall back to a guess from progress. */
 export const statusOf = (p: Project): Status =>

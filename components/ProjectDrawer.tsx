@@ -4,16 +4,18 @@ import { useEffect, useState } from "react";
 import { ClipboardPaste, Loader2, Trash2, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { AssigneeChips } from "./AssigneePicker";
+import DependencyPicker from "./DependencyPicker";
+import { dependsOnTransitively, depsOf } from "@/lib/deps";
 import { deleteProject, saveProject } from "@/lib/db";
 import { assigneesOf, fmt, sectionColor, statusOf } from "@/lib/dates";
 import { STATUSES, type Project } from "@/lib/types";
 
 export type DrawerState = { mode: "create"; section?: string } | { mode: "edit"; project: Project } | null;
 
-type Form = Pick<Project, "name" | "section" | "assignees" | "status" | "progress" | "start" | "due" | "release" | "notes">;
-const empty = (section = ""): Form => ({ name: "", section, assignees: [], status: "Not Started", progress: 0, start: "", due: "", release: "", notes: "" });
+type Form = Pick<Project, "name" | "section" | "assignees" | "status" | "progress" | "start" | "due" | "release" | "notes"> & { dependsOn: string[] };
+const empty = (section = ""): Form => ({ name: "", section, assignees: [], dependsOn: [], status: "Not Started", progress: 0, start: "", due: "", release: "", notes: "" });
 
-export default function ProjectDrawer({ state, sections, onClose, onImport }: { state: DrawerState; sections: string[]; onClose: () => void; onImport: () => void }) {
+export default function ProjectDrawer({ state, sections, projects, onClose, onImport }: { state: DrawerState; sections: string[]; projects: Project[]; onClose: () => void; onImport: () => void }) {
   const { user } = useAuth();
   const [form, setForm] = useState<Form>(empty());
   const [busy, setBusy] = useState(false);
@@ -23,7 +25,7 @@ export default function ProjectDrawer({ state, sections, onClose, onImport }: { 
   useEffect(() => {
     if (!state) return;
     setError(null);
-    setForm(state.mode === "edit" ? { ...state.project, assignees: assigneesOf(state.project), status: statusOf(state.project) } : empty(state.section));
+    setForm(state.mode === "edit" ? { ...state.project, assignees: assigneesOf(state.project), dependsOn: depsOf(state.project, new Map(projects.map((p) => [p.id, p]))), status: statusOf(state.project) } : empty(state.section));
   }, [state]);
 
   useEffect(() => {
@@ -64,6 +66,12 @@ export default function ProjectDrawer({ state, sections, onClose, onImport }: { 
       setBusy(false);
     }
   };
+
+  // candidates: every other project, minus any that already (indirectly) depend on this one — that would create a loop
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const selfId = state?.mode === "edit" ? state.project.id : null;
+  const depOptions = projects.filter((p) => p.id !== selfId && !(selfId && dependsOnTransitively(p, selfId, byId)));
+  const lateDeps = form.start ? form.dependsOn.map((id) => byId.get(id)).filter((d): d is Project => !!d && !!d.due && d.due >= form.start && statusOf(d) !== "Done") : [];
 
   const color = sectionColor(form.section || "General");
 
@@ -120,6 +128,15 @@ export default function ProjectDrawer({ state, sections, onClose, onImport }: { 
               </div>
               <Label text="Release date">
                 <input type="date" className="field" value={form.release} onChange={(e) => set("release", e.target.value)} />
+              </Label>
+
+              <Label text="Depends on">
+                <DependencyPicker value={form.dependsOn} onChange={(v) => set("dependsOn", v)} options={depOptions} />
+                {lateDeps.length > 0 && (
+                  <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Starts before {lateDeps.map((d) => `“${d.name}”`).join(", ")} {lateDeps.length === 1 ? "is" : "are"} due to finish.
+                  </p>
+                )}
               </Label>
 
               <Label text="Notes">

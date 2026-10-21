@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { ChevronDown, Maximize2, Plus } from "lucide-react";
+import { ChevronDown, Link2, Maximize2, Plus } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { saveProject } from "@/lib/db";
+import { depsOf } from "@/lib/deps";
 import { assigneesOf, isOverdue, sectionColor, STATUS_META, statusOf } from "@/lib/dates";
 import { groupBySection } from "@/lib/group";
 import { STATUSES, type Project, type ProjectInput, type Status } from "@/lib/types";
@@ -13,9 +14,10 @@ import { AssigneeCell } from "./AssigneePicker";
 
 const COLS = "grid-cols-[minmax(280px,2.2fr)_150px_120px_150px_136px_136px_136px_minmax(220px,1.6fr)_44px]";
 
-export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Project[]; onOpen: (p: Project) => void; onAdd: (section: string) => void }) {
+export default function TrackerTable({ projects, all, onOpen, onAdd }: { projects: Project[]; all: Project[]; onOpen: (p: Project) => void; onAdd: (section: string) => void }) {
   const { user } = useAuth();
   const groups = useMemo(() => groupBySection(projects), [projects]);
+  const byId = useMemo(() => new Map(all.map((p) => [p.id, p])), [all]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const update = (id: string, patch: ProjectInput) => user && saveProject({ id, ...patch }, user).catch((e) => alert(e.message));
@@ -58,7 +60,7 @@ export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Pr
               </div>
 
               {!isCollapsed &&
-                g.items.map((p) => <Row key={p.id} p={p} color={c.fill} update={update} onOpen={onOpen} />)}
+                g.items.map((p) => <Row key={p.id} p={p} byId={byId} color={c.fill} update={update} onOpen={onOpen} />)}
             </section>
           );
         })}
@@ -67,13 +69,23 @@ export default function TrackerTable({ projects, onOpen, onAdd }: { projects: Pr
   );
 }
 
-function Row({ p, color, update, onOpen }: { p: Project; color: string; update: (id: string, patch: ProjectInput) => void; onOpen: (p: Project) => void }) {
+function Row({ p, byId, color, update, onOpen }: { p: Project; byId: Map<string, Project>; color: string; update: (id: string, patch: ProjectInput) => void; onOpen: (p: Project) => void }) {
   const overdue = isOverdue(p);
+  const deps = depsOf(p, byId).map((id) => byId.get(id)!);
+  const waiting = deps.filter((d) => statusOf(d) !== "Done");
   return (
     <div className={clsx("group grid items-center border-b border-ink-100 px-3 py-1 last:border-0 hover:bg-brand-50/30", COLS)}>
       <div className="flex items-center gap-1 pr-2">
         <span className="mr-1 h-6 w-1 shrink-0 rounded-full" style={{ background: color }} />
         <TextCell value={p.name} onCommit={(v) => v.trim() && update(p.id, { name: v })} className="font-medium" placeholder="Project name" />
+        {deps.length > 0 && (
+          <span
+            title={`Depends on:\n${deps.map((d) => `${statusOf(d) === "Done" ? "✓" : "•"} ${d.name}`).join("\n")}`}
+            className={clsx("flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", waiting.length ? "bg-amber-50 text-amber-700" : "bg-ink-100 text-ink-500")}
+          >
+            <Link2 className="h-3 w-3" />{deps.length}
+          </span>
+        )}
       </div>
       <div className="pr-2">
         <AssigneeCell value={assigneesOf(p)} onChange={(v) => update(p.id, { assignees: v })} />
